@@ -374,8 +374,11 @@ fn l2_normalize(values: &mut [f32]) {
 }
 
 fn default_models_dir() -> PathBuf {
-    env::var_os("HOME")
-        .map(PathBuf::from)
-        .map(|home| home.join(".mempal").join("models"))
-        .unwrap_or_else(|| PathBuf::from(".mempal/models"))
+    if let Some(home) = env::var_os("HOME") {
+        return PathBuf::from(home).join(".mempal").join("models");
+    }
+    if let Some(profile) = env::var_os("USERPROFILE") {
+        return PathBuf::from(profile).join(".mempal").join("models");
+    }
+    PathBuf::from(".mempal/models")
 }

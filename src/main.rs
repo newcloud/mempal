@@ -3489,10 +3489,13 @@ async fn build_embedder(config: &Config) -> Result<Box<dyn Embedder>> {
 }
 
 fn expand_home(path: &str) -> PathBuf {
-    if let Some(rest) = path.strip_prefix("~/")
-        && let Some(home) = env::var_os("HOME")
-    {
-        return PathBuf::from(home).join(rest);
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = env::var_os("HOME") {
+            return PathBuf::from(home).join(rest);
+        }
+        if let Some(profile) = env::var_os("USERPROFILE") {
+            return PathBuf::from(profile).join(rest);
+        }
     }
 
     PathBuf::from(path)

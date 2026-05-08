@@ -75,8 +75,11 @@ pub enum ConfigError {
 }
 
 fn default_config_path() -> PathBuf {
-    env::var_os("HOME")
-        .map(PathBuf::from)
-        .map(|home| home.join(".mempal").join("config.toml"))
-        .unwrap_or_else(|| PathBuf::from("~/.mempal/config.toml"))
+    if let Some(home) = env::var_os("HOME") {
+        return PathBuf::from(home).join(".mempal").join("config.toml");
+    }
+    if let Some(profile) = env::var_os("USERPROFILE") {
+        return PathBuf::from(profile).join(".mempal").join("config.toml");
+    }
+    PathBuf::from("~/.mempal/config.toml")
 }

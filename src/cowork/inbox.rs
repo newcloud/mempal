@@ -46,17 +46,18 @@ pub struct InboxMessage {
     pub content: String,
 }
 
-/// Resolve ~/.mempal using the HOME env var. Matches the existing
-/// `expand_home` pattern at src/main.rs:949-957. Used by both the CLI
+/// Resolve ~/.mempal cross-platform. Checks HOME (Unix), then USERPROFILE
+/// (Windows), then falls back to `.mempal` relative. Used by both the CLI
 /// subcommands (cowork-drain / cowork-status / cowork-install-hooks)
 /// and the MCP server handler (mempal_cowork_push).
-///
-/// No `dirs` crate dependency — P8 explicitly promises zero new runtime deps.
 pub fn mempal_home() -> PathBuf {
-    match std::env::var_os("HOME") {
-        Some(home) => PathBuf::from(home).join(".mempal"),
-        None => PathBuf::from(".mempal"),
+    if let Some(home) = std::env::var_os("HOME") {
+        return PathBuf::from(home).join(".mempal");
     }
+    if let Some(profile) = std::env::var_os("USERPROFILE") {
+        return PathBuf::from(profile).join(".mempal");
+    }
+    PathBuf::from(".mempal")
 }
 
 /// Resolve the given cwd to a canonical "project identity" path. Walks the

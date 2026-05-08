@@ -13,8 +13,57 @@ use crate::knowledge_card_retrieval::{RetrievedEvidenceCitation, RetrievedKnowle
 use crate::knowledge_distill::DistillOutcome;
 use crate::knowledge_gate::{GateReport, PromotionPolicyEntry};
 use crate::knowledge_lifecycle::{DemoteOutcome, PromoteOutcome};
-use rmcp::schemars::{self, JsonSchema};
+use rmcp::schemars::{self, schema_for, JsonSchema, Schema};
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
+
+/// Wrapper around `serde_json::Value` that provides a friendly JSON Schema
+/// instead of the `true` shorthand (which means "any value" but is not
+/// supported by all MCP clients, e.g. opencode).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AnyJson(pub serde_json::Value);
+
+impl JsonSchema for AnyJson {
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("AnyJson")
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> Schema {
+        let mut schema = schema_for!(serde_json::Value);
+        schema.ensure_object();
+        generator
+            .definitions_mut()
+            .insert("AnyJson".to_string(), schema.clone().into());
+        schema
+    }
+}
+
+macro_rules! no_format_int {
+    ($name:ident, $inner:ty) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+        #[serde(transparent)]
+        pub struct $name(pub $inner);
+
+        impl JsonSchema for $name {
+            fn schema_name() -> Cow<'static, str> {
+                Cow::Borrowed(stringify!($name))
+            }
+
+            fn json_schema(_generator: &mut schemars::SchemaGenerator) -> Schema {
+                let mut schema = schema_for!($inner);
+                if let Some(obj) = schema.as_object_mut() {
+                    obj.remove("format");
+                }
+                schema
+            }
+        }
+    };
+}
+
+no_format_int!(U8, u8);
+no_format_int!(U32, u32);
+no_format_int!(U64, u64);
+no_format_int!(USize, usize);
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct SearchRequest {
@@ -249,10 +298,10 @@ pub struct KnowledgeGateRequirementsDto {
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct KnowledgeGateEvidenceCountsDto {
-    pub supporting: usize,
-    pub counterexample: usize,
-    pub teaching: usize,
-    pub verification: usize,
+    pub supporting: USize,
+    pub counterexample: USize,
+    pub teaching: USize,
+    pub verification: USize,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -294,7 +343,6 @@ pub struct KnowledgeCardsRequest {
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct KnowledgeCardsResponse {
     pub cards: Vec<KnowledgeCardDto>,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub retrieved: Vec<RetrievedKnowledgeCardDto>,
     pub events: Vec<KnowledgeCardEventDto>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -318,17 +366,16 @@ pub struct Phase3Request {
     pub evaluator_id: Option<String>,
     pub research_report_id: Option<String>,
     pub note: Option<String>,
-    pub metadata: Option<serde_json::Value>,
+    pub metadata: Option<AnyJson>,
     pub limit: Option<usize>,
     pub candidate: Option<String>,
-    pub report: Option<serde_json::Value>,
+    pub report: Option<AnyJson>,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct Phase3Response {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event: Option<RuntimeAdoptionEventDto>,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub events: Vec<RuntimeAdoptionEventDto>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stats: Option<RuntimeAdoptionStatsDto>,
@@ -540,10 +587,10 @@ impl From<GateReport> for KnowledgeGateResponse {
                 counterexamples_block: report.requirements.counterexamples_block,
             },
             evidence_counts: KnowledgeGateEvidenceCountsDto {
-                supporting: report.evidence_counts.supporting,
-                counterexample: report.evidence_counts.counterexample,
-                teaching: report.evidence_counts.teaching,
-                verification: report.evidence_counts.verification,
+                supporting: USize(report.evidence_counts.supporting),
+                counterexample: USize(report.evidence_counts.counterexample),
+                teaching: USize(report.evidence_counts.teaching),
+                verification: USize(report.evidence_counts.verification),
             },
         }
     }
@@ -578,7 +625,6 @@ pub struct ContextItemDto {
     pub parent_anchor_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger_hints: Option<TriggerHintsDto>,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub evidence_citations: Vec<ContextEvidenceCitationDto>,
 }
 
@@ -599,7 +645,6 @@ pub struct SearchResultDto {
     pub similarity: f32,
     pub route: RouteDecisionDto,
     /// Other wings sharing this room (tunnel cross-references).
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tunnel_hints: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub neighbors: Option<ChunkNeighborsDto>,
@@ -612,7 +657,7 @@ pub struct SearchResultDto {
     /// Emotion tags derived from AAAK analysis. Always non-empty.
     pub emotions: Vec<String>,
     /// Importance derived from AAAK flags, normalized to the existing 2-4 scale.
-    pub importance_stars: u8,
+    pub importance_stars: U8,
     pub memory_kind: String,
     pub domain: String,
     pub field: String,
@@ -640,7 +685,7 @@ pub struct ChunkNeighborsDto {
 pub struct NeighborChunkDto {
     pub drawer_id: String,
     pub content: String,
-    pub chunk_index: u32,
+    pub chunk_index: U32,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -720,7 +765,7 @@ pub struct IngestResponse {
     /// Omitted in dry-run and when lock was not acquired. When > 0, a
     /// concurrent ingest of the same content serialized with this call.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lock_wait_ms: Option<u64>,
+    pub lock_wait_ms: Option<U64>,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -732,13 +777,13 @@ pub struct DuplicateWarning {
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct StatusResponse {
-    pub schema_version: u32,
-    pub normalize_version_current: u32,
-    pub stale_drawer_count: u64,
+    pub schema_version: U32,
+    pub normalize_version_current: U32,
+    pub stale_drawer_count: U64,
     pub drawer_count: i64,
     pub taxonomy_count: i64,
-    pub db_size_bytes: u64,
-    pub diary_rollup_days: u32,
+    pub db_size_bytes: U64,
+    pub diary_rollup_days: U32,
     pub scopes: Vec<ScopeCount>,
     pub aaak_spec: String,
     pub memory_protocol: String,
@@ -887,7 +932,6 @@ pub struct TunnelDto {
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub room: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wings: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub left: Option<TunnelEndpointDto>,
@@ -902,7 +946,7 @@ pub struct TunnelDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub via_tunnel_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub hop: Option<u8>,
+    pub hop: Option<U8>,
 }
 
 impl From<TunnelEndpointDto> for TunnelEndpoint {
@@ -991,7 +1035,7 @@ pub struct CoworkPushResponse {
     pub target_tool: String,
     pub inbox_path: String,
     pub pushed_at: String,
-    pub inbox_size_after: u64,
+    pub inbox_size_after: U64,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -1012,7 +1056,7 @@ pub struct FactCheckRequest {
 pub struct FactCheckResponse {
     pub issues: Vec<crate::factcheck::FactIssue>,
     pub checked_entities: Vec<String>,
-    pub kg_triples_scanned: usize,
+    pub kg_triples_scanned: USize,
 }
 
 impl SearchResultDto {
@@ -1033,7 +1077,7 @@ impl SearchResultDto {
             topics: signals.topics,
             flags: signals.flags,
             emotions: signals.emotions,
-            importance_stars: signals.importance_stars,
+            importance_stars: U8(signals.importance_stars),
             memory_kind: memory_kind_slug(&value.memory_kind).to_string(),
             domain: domain_slug(&value.domain).to_string(),
             field: value.field,
@@ -1218,10 +1262,10 @@ impl From<KnowledgeCardGateReport> for KnowledgeCardGateDto {
                 counterexamples_block: value.requirements.counterexamples_block,
             },
             evidence_counts: KnowledgeGateEvidenceCountsDto {
-                supporting: value.evidence_counts.supporting,
-                counterexample: value.evidence_counts.counterexample,
-                teaching: value.evidence_counts.teaching,
-                verification: value.evidence_counts.verification,
+                supporting: USize(value.evidence_counts.supporting),
+                counterexample: USize(value.evidence_counts.counterexample),
+                teaching: USize(value.evidence_counts.teaching),
+                verification: USize(value.evidence_counts.verification),
             },
         }
     }
@@ -1264,7 +1308,7 @@ impl From<NeighborChunk> for NeighborChunkDto {
         Self {
             drawer_id: value.drawer_id,
             content: value.content,
-            chunk_index: value.chunk_index,
+            chunk_index: U32(value.chunk_index),
         }
     }
 }

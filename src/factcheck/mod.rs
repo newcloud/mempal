@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::core::db::{Database, DbError};
+use crate::mcp::USize;
 
 pub mod contradictions;
 pub mod names;
@@ -24,7 +25,7 @@ pub enum FactIssue {
     SimilarNameConflict {
         mentioned: String,
         known_entity: String,
-        edit_distance: usize,
+        edit_distance: USize,
     },
     RelationContradiction {
         subject: String,

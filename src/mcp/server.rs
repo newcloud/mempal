@@ -855,14 +855,15 @@ impl MempalMcpServer {
     )]
     async fn mempal_status(&self) -> std::result::Result<Json<StatusResponse>, ErrorData> {
         let db = self.open_db()?;
-        let schema_version = db.schema_version().map_err(db_error)?;
-        let stale_drawer_count = db
-            .stale_drawer_count(CURRENT_NORMALIZE_VERSION)
-            .map_err(db_error)? as u64;
+        let schema_version = crate::mcp::U32(db.schema_version().map_err(db_error)?);
+        let stale_drawer_count = crate::mcp::U64(
+            db.stale_drawer_count(CURRENT_NORMALIZE_VERSION)
+                .map_err(db_error)? as u64,
+        );
         let drawer_count = db.drawer_count().map_err(db_error)?;
         let taxonomy_count = db.taxonomy_count().map_err(db_error)?;
-        let db_size_bytes = db.database_size_bytes().map_err(db_error)?;
-        let diary_rollup_days = db.diary_rollup_days().map_err(db_error)?;
+        let db_size_bytes = crate::mcp::U64(db.database_size_bytes().map_err(db_error)?);
+        let diary_rollup_days = crate::mcp::U32(db.diary_rollup_days().map_err(db_error)?);
         let scopes = db
             .scope_counts()
             .map_err(db_error)?
@@ -876,7 +877,7 @@ impl MempalMcpServer {
 
         Ok(Json(StatusResponse {
             schema_version,
-            normalize_version_current: CURRENT_NORMALIZE_VERSION,
+            normalize_version_current: crate::mcp::U32(CURRENT_NORMALIZE_VERSION),
             stale_drawer_count,
             drawer_count,
             taxonomy_count,
@@ -1363,7 +1364,7 @@ impl MempalMcpServer {
                     evaluator_id: trim_to_owned(request.evaluator_id.as_deref()),
                     research_report_id: trim_to_owned(request.research_report_id.as_deref()),
                     note: trim_to_owned(request.note.as_deref()),
-                    metadata: request.metadata,
+                    metadata: request.metadata.map(|m| m.0),
                     created_at: current_timestamp(),
                 };
                 db.insert_runtime_adoption_event(&event).map_err(|error| {
@@ -1452,7 +1453,7 @@ impl MempalMcpServer {
                     events: Vec::new(),
                     stats: None,
                     gate: None,
-                    research_plan: Some(validate_research_adapter_plan_value(&report)),
+                    research_plan: Some(validate_research_adapter_plan_value(&report.0)),
                 }))
             }
             other => Err(ErrorData::invalid_params(
@@ -1604,7 +1605,7 @@ impl MempalMcpServer {
             return Ok(Json(IngestResponse {
                 drawer_id: outcome.drawer_id,
                 duplicate_warning: None,
-                lock_wait_ms: outcome.stats.lock_wait_ms,
+                lock_wait_ms: outcome.stats.lock_wait_ms.map(crate::mcp::U64),
             }));
         }
 
@@ -1651,7 +1652,7 @@ impl MempalMcpServer {
             std::time::Duration::from_secs(5),
         )
         .map_err(|e| ErrorData::internal_error(format!("ingest lock: {e}"), None))?;
-        let lock_wait_ms = Some(lock_guard.wait_duration().as_millis() as u64);
+        let lock_wait_ms = Some(crate::mcp::U64(lock_guard.wait_duration().as_millis() as u64));
 
         // Semantic dedup check: find most similar existing drawer
         let duplicate_warning = check_semantic_duplicate(&db, &vector, &request.content);
@@ -2004,7 +2005,7 @@ impl MempalMcpServer {
                         created_at: None,
                         created_by: None,
                         via_tunnel_id: Some(result.via_tunnel_id),
-                        hop: Some(result.hop),
+                        hop: Some(crate::mcp::U8(result.hop)),
                     })
                     .collect();
                 Ok(Json(TunnelsResponse { tunnels }))
@@ -2139,7 +2140,7 @@ impl MempalMcpServer {
             target_tool: target.dir_name().to_string(),
             inbox_path: path.to_string_lossy().to_string(),
             pushed_at,
-            inbox_size_after: size,
+            inbox_size_after: crate::mcp::U64(size),
         }))
     }
 
@@ -2171,7 +2172,7 @@ impl MempalMcpServer {
         Ok(Json(FactCheckResponse {
             issues: report.issues,
             checked_entities: report.checked_entities,
-            kg_triples_scanned: report.kg_triples_scanned,
+            kg_triples_scanned: crate::mcp::USize(report.kg_triples_scanned),
         }))
     }
 }

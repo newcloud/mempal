@@ -113,7 +113,7 @@ pub fn detect_similar_name_conflicts(text_names: &[String], known: &[String]) ->
             issues.push(FactIssue::SimilarNameConflict {
                 mentioned: mentioned.clone(),
                 known_entity: known_entity.clone(),
-                edit_distance: edit,
+                edit_distance: crate::mcp::USize(edit),
             });
         }
     }
